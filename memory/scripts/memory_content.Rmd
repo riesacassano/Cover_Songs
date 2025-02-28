@@ -1,0 +1,117 @@
+---
+title: "Memory content"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+This notebook looks at memory content for pairs of original-cover memories, as predicted by perceptual similarity of the clips evoking the memories.
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(lme4)
+library(lmerTest)
+```
+
+Load the data.
+```{r}
+data <- read_csv('../../data/processed/dense/joined_with_features/memory_pairs.csv')
+```
+
+Load just the features and similarity for song-wise analysis.
+```{r}
+by_song <- read_csv('../../data/processed/dense/joined_with_features/similarity_and_scaled_feature_differences.csv')
+```
+
+Make same/different coding a factor. (Filter out private, lump similar in with same.)
+```{r}
+data_factor <- data %>%
+  filter(content != 'private') %>%
+  mutate(content = factor(content, 
+                          levels = c('same', 'similar', 'diff'), 
+                          labels = c('same', 'same', 'different')))
+
+```
+
+
+Look at same/different coding vs semantic distance from sentence embeddings.
+
+```{r}
+ggplot(data, aes(x = content, y = semantic_distance)) +
+  geom_jitter(width = 0.25)
+```
+
+```{r}
+ggplot(data_factor, aes(x = content, y = semantic_distance)) +
+  geom_jitter(width = 0.25)
+```
+
+Predict semantic distance from perceptual similarity.
+```{r}
+summary(lmer(semantic_distance ~ mean_sim + (1 | internal_id) + (1 | song_id),
+             data_factor))
+```
+
+Predict content (same/different) from perceptual similarity.
+```{r}
+summary(glmer(content ~ mean_sim + (1 | internal_id) + (1 | song_id),
+              data_factor, family = binomial))
+```
+
+Visualize.
+```{r}
+ggplot(data_factor, aes(x = mean_sim, y = semantic_distance, color = content)) +
+  geom_point(alpha = 0.8)
+```
+
+
+Can we predict semantic distance just for same memories? (expect no)
+```{r}
+data_factor %>%
+  filter(content == 'same') %>%
+  lmer(semantic_distance ~ mean_sim + (1 | internal_id) + (1 | song_id), .) %>%
+  summary()
+```
+
+Can we predict semantic distance just for different memories? (expect yes??)
+
+```{r}
+data_factor %>%
+  filter(content == 'different') %>%
+  lmer(semantic_distance ~ mean_sim + (1 | internal_id) + (1 | song_id), .) %>%
+  summary()
+```
+
+
+Compute proportion of same or similar memories per song.
+```{r}
+data_by_song <- data_factor %>%
+  group_by(song_id, content) %>%
+  summarize(count = n()) %>%
+  pivot_wider(id_cols = song_id, names_from = content, values_from = count) %>%
+  mutate(different = ifelse(is.na(different), 0, different)) %>%
+  mutate(prop_same = same / (same + different))
+```
+
+```{r}
+data_by_song %<>%
+  left_join(., by_song, by = join_by(song_id))
+```
+
+```{r}
+summary(lm(prop_same ~ mean_sim, data_by_song))
+```
+
+Visualize.
+```{r}
+ggplot(data_by_song, aes(x = mean_sim, y = prop_same)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = 'black')
+```

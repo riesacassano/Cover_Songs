@@ -1,0 +1,176 @@
+---
+title: "Emotion features"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+#library(RColorBrewer)
+library(viridis)
+```
+
+This script looks at the correlation between emotional feature differences and similarity ratings in the expanded corpus.
+
+First, load the features and feature differences.
+```{r}
+features <- read_csv('../../data/processed/expanded/joined_with_features/all_features.csv')
+feature_diffs <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_differences.csv')
+feature_diffs_scaled <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_scaled_differences.csv')
+```
+
+Keep only emotional features.
+```{r}
+emot_feat <- features %>% select(1, 27:30)
+emot_feat_diffs <- feature_diffs %>% select(1:2, 30:31)
+emot_feat_diffs_scaled <- feature_diffs_scaled %>% select(1:2, 29:30)
+```
+
+Colors: 
+
+- Valence: orange #FF7F00
+- Arousal: red #E31A1C
+
+Add genre, just to check
+```{r}
+genre <- features %>%
+  select(song_id, genre) %>%
+  separate_wider_delim(cols = song_id, delim = '_', 
+                       names = c('title', 'artist', 'orig_or_cover')) %>%
+  mutate(song_id = paste(title, artist, sep = '_')) %>%
+  mutate(title = NULL, artist = NULL) %>%
+  pivot_wider(id_cols = song_id, names_from = orig_or_cover, values_from = genre) %>%
+  mutate(same_genre = ifelse(Cover5S == Original5S, 1, 0))
+```
+
+Join same genre with emotional feature differences.
+```{r}
+emot_feat_diffs <- genre %>%
+  select(song_id, same_genre) %>%
+  left_join(emot_feat_diffs, ., by = join_by(song_id))
+
+emot_feat_diffs_scaled <- genre %>%
+  select(song_id, same_genre) %>%
+  left_join(emot_feat_diffs_scaled, ., by = join_by(song_id))
+```
+
+\newpage
+Is there a relationship between valence, arousal, and genre?
+```{r}
+summary(lm(mean_valence_difference ~ same_genre, emot_feat_diffs_scaled))
+summary(lm(mean_arousal_difference ~ same_genre, emot_feat_diffs_scaled))
+```
+
+```{r}
+summary(lm(mean_sim ~ mean_valence_difference*same_genre, emot_feat_diffs_scaled))
+summary(lm(mean_sim ~ mean_arousal_difference*same_genre, emot_feat_diffs_scaled))
+```
+
+\newpage
+Is there a relationship between valence and arousal in this dataset?
+
+```{r}
+ggplot(emot_feat, aes(mean_valence, mean_arousal)) +
+  geom_point() +
+  theme_minimal() +
+  geom_hline(yintercept = 0, color = 'black') +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab('mean valence') +
+  ylab('mean arousal') + 
+  theme(axis.title.x = element_text(color = '#FF7F00', size = 18),
+        axis.title.y = element_text(color = '#E31A1C', size = 18),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12)) 
+```
+
+```{r}
+summary(lm(mean_arousal ~ mean_valence, emot_feat))
+```
+
+What's the correlation between valence and arousal?
+
+```{r}
+cor(emot_feat$mean_valence, emot_feat$mean_arousal)
+```
+
+\newpage
+
+Is there a correlation between valence difference and arousal difference?
+
+```{r}
+ggplot(emot_feat_diffs, aes(mean_valence_difference, mean_arousal_difference)) +
+  geom_point() +
+  theme_minimal() +
+  geom_hline(yintercept = 0, color = 'black') +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab('mean valence difference') +
+  ylab('mean arousal difference') + 
+  theme(axis.title.x = element_text(color = '#FF7F00', size = 18),
+        axis.title.y = element_text(color = '#E31A1C', size = 18),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12)) 
+```
+
+This means that a majority of the originals are more positive (+ valence difference) and higher arousal (+ arousal difference) than covers. This makes sense, as covers tend to be more laid back than originals.
+
+
+```{r}
+summary(lm(mean_arousal_difference ~ mean_valence_difference, emot_feat_diffs))
+```
+
+```{r}
+cor(emot_feat_diffs$mean_valence_difference, emot_feat_diffs$mean_arousal_difference)
+```
+
+The correlation between differences is about the same as between the actual valence and arousal (r = 0.34).
+
+
+\newpage
+# Do emotional feature differences predict similarity?
+
+```{r}
+summary(lm(mean_sim ~ mean_valence_difference, emot_feat_diffs_scaled))
+summary(lm(mean_sim ~ mean_arousal_difference, emot_feat_diffs_scaled))
+```
+
+```{r}
+emot.model <- lm(mean_sim ~ mean_valence_difference + mean_arousal_difference, emot_feat_diffs_scaled)
+summary(emot.model)
+```
+
+```{r}
+emot.model.int <- lm(mean_sim ~ mean_valence_difference*mean_arousal_difference, emot_feat_diffs_scaled)
+summary(emot.model.int)
+```
+
+Is this interaction worth including in the model?
+```{r}
+anova(emot.model, emot.model.int)
+```
+
+Not worth it!
+
+Plot valence and arousal differences with similarity as color.
+
+```{r}
+ggplot(feature_diffs, aes(abs(mean_valence_difference), abs(mean_arousal_difference), fill = mean_sim)) +
+  geom_point(pch = 21, color = 'black', size = 4, alpha = 0.8) +
+  theme_light() +
+  scale_fill_viridis(name = 'mean\nsimilarity\nrating', option = 'inferno') +
+  xlab('mean valence difference') +
+  ylab('mean arousal difference') +
+  theme(axis.title.x = element_text(color = '#FF7F00', size = 18),
+        axis.title.y = element_text(color = '#E31A1C', size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14))
+#ggsave('../figures/emotion_vs_similarity.png', width = 7, height = 5)
+```

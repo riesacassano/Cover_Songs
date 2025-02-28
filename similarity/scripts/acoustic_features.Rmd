@@ -1,0 +1,320 @@
+---
+title: 'Acoustic features analysis'
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(corrplot)
+library(broom)
+```
+
+This script explores the acoustic features in the expanded corpus, specifically:
+
+- correlations between features
+- correlations between individual feature differences and similarity between originals and covers
+- PCA to find low-dimensional representation that best captures variability, both on absolute features and scaled feature differences
+
+
+First, load the features and feature differences (unscaled).
+```{r}
+features <- read_csv('../../data/processed/expanded/joined_with_features/all_features.csv')
+feature_diffs <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_differences.csv')
+```
+
+Select only columns with acoustic features.
+```{r}
+acoustic_feat <- features %>% select(1:21)
+acoustic_diffs <- feature_diffs %>% select(1:24)
+```
+
+\newpage
+# Correlation between features
+## Features
+Compute the correlation matrix.
+```{r}
+corr_matrix <- cor(acoustic_feat[-1]) # leave out song_id
+```
+
+```{r}
+corrplot(corr_matrix, type = 'upper', # upper triangle
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+\newpage
+Without MFCCs.
+```{r}
+corr_matrix_subset <- cor(select(acoustic_feat, -c(song_id, contains("mfcc"))))
+# leave out song_id, MFCCs
+```
+
+```{r}
+corrplot(corr_matrix_subset, type = 'upper', # upper triangle
+         method = 'number', # see actual correlation values
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+\newpage
+Now just look at MFCCs.
+```{r}
+corr_matrix_MFCCs <- cor(select(acoustic_feat, contains("mfcc")))
+# keep only MFCCs
+```
+
+```{r}
+corrplot(corr_matrix_MFCCs, type = 'upper', # upper triangle
+         #method = 'number', # see actual correlation values
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+
+\newpage
+## Feature differences
+Are there correlations between feature differences?
+```{r}
+corr_matrix_diffs <- cor(acoustic_diffs[-seq(1,3)]) # leave out song_id, similarity
+```
+
+```{r}
+corrplot(corr_matrix_diffs, type = 'upper', # upper triangle
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+
+Yes, there seem to be similar systematic differences.
+
+\newpage
+```{r}
+corr_matrix_subset_diffs <- cor(select(acoustic_diffs, -c(seq(1,3), contains("mfcc"))))
+```
+
+```{r}
+corrplot(corr_matrix_subset_diffs, type = 'upper', # upper triangle
+         method = 'number',
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+
+\newpage
+```{r}
+corr_matrix_mfcc_diffs <- cor(select(acoustic_diffs, contains("mfcc")))
+```
+
+```{r}
+corrplot(corr_matrix_mfcc_diffs, type = 'upper', # upper triangle
+         #method = 'number',
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+
+\newpage
+# Correlations between individual feature differences and similarity
+How well do individual features predict similarity?
+Take these results with a grain of salt because we're running A LOT of models.
+```{r}
+summary(lm(mean_sim ~ rms_difference, acoustic_diffs))
+summary(lm(mean_sim ~ spectral_bandwidth_difference, acoustic_diffs))
+summary(lm(mean_sim ~ spectral_centroid_difference, acoustic_diffs))
+summary(lm(mean_sim ~ spectral_contrast_difference, acoustic_diffs))
+summary(lm(mean_sim ~ spectral_flatness_difference, acoustic_diffs))
+summary(lm(mean_sim ~ spectral_rolloff_difference, acoustic_diffs))
+summary(lm(mean_sim ~ zero_crossing_rate_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfccs_offset_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc1_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc2_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc3_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc4_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc5_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc6_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc7_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc8_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc9_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc10_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc11_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfcc12_difference, acoustic_diffs))
+summary(lm(mean_sim ~ mfccs_dist, acoustic_diffs))
+```
+
+Well, none of the acoustic features individually predict similarity except MFCCs distance. This is not super surprising.
+
+\newpage
+# Predicting similarity with all acoustic features
+
+Run the full and subset models just to get a sense...
+```{r}
+summary(lm(mean_sim ~ rms_difference + spectral_bandwidth_difference + 
+             spectral_centroid_difference + spectral_contrast_difference +
+             spectral_flatness_difference + spectral_rolloff_difference +
+             zero_crossing_rate_difference, 
+           acoustic_diffs))
+```
+
+```{r}
+summary(lm(mean_sim ~ mfccs_offset_difference + mfcc1_difference + mfcc2_difference + mfcc3_difference + mfcc4_difference + mfcc5_difference + mfcc6_difference + mfcc7_difference + mfcc8_difference + mfcc9_difference + mfcc10_difference + mfcc11_difference + mfcc12_difference, 
+           acoustic_diffs))
+```
+
+```{r}
+summary(lm(mean_sim ~ rms_difference + spectral_bandwidth_difference + 
+             spectral_centroid_difference + spectral_contrast_difference +
+             spectral_flatness_difference + spectral_rolloff_difference +
+             zero_crossing_rate_difference + mfccs_offset_difference + mfcc1_difference + mfcc2_difference + mfcc3_difference + mfcc4_difference + mfcc5_difference + mfcc6_difference + mfcc7_difference + mfcc8_difference + mfcc9_difference + mfcc10_difference + mfcc11_difference + mfcc12_difference, 
+           acoustic_diffs))
+```
+
+Cool, so NOTHING is significant.
+
+\newpage
+# Principal components
+(Actual PCA performed in `acoustic_PCA.ipynb`, just analyzed here...)
+
+Load the PCs for analysis.
+```{r}
+acoustic_PCs <- read_csv('../../data/processed/expanded/joined_with_features/acoustic_PCs.csv')
+```
+
+The first 6 PCs explains about 80% of the variance in the acoustic features.
+
+Pivot the data wider and calculate differences in the first 6 PCs.
+```{r}
+pcs_diff <- acoustic_PCs %>%
+  select(seq(1:7)) %>%
+  # prepare the data to pivot wider
+  separate_wider_delim(song_id, delim = '_', names = c('title', 'artist', 'orig_or_cover')) %>%
+  mutate(song_id = paste(title, artist, sep = '_')) %>%
+  relocate(song_id) %>%
+  mutate(title = NULL, artist = NULL) %>%
+  # pivot longer first, so each row is one PC for one clip
+  pivot_longer(cols = -c(song_id, orig_or_cover), names_to = 'PC', values_to = 'value') %>%
+  # pivot wider to group by song and PC
+  pivot_wider(id_cols = c(song_id, PC), names_from = orig_or_cover, values_from = value) %>%
+  # calculate the difference between each PC for each song
+  mutate(difference = Original5S - Cover5S) %>%
+  # drop original and cover (saved elsewhere)
+  select(-c(Original5S, Cover5S)) %>%
+  # add 1 to the PCs column to make it 1-6 (rather than 0-5)
+  mutate(PC = as_factor(as.numeric(PC) + 1)) %>%
+  # pivot wider to get back to each song has one row
+  pivot_wider(id_cols = song_id, names_from = PC, values_from = difference,
+              names_glue = "PC{PC}_difference")
+```
+
+Save this dataframe.
+```{r}
+#write_csv(pcs_diff, '../../data/processed/expanded/joined_with_features/acoustic_PC_diffs.csv')
+```
+
+The PCs themselves should be uncorrelated (which they are).
+
+```{r}
+corr_matrix_PCs <- cor(acoustic_PCs[-1])
+corrplot(corr_matrix_PCs, type = 'upper', 
+         tl.col = 'black', tl.srt = 45) 
+```
+
+\newpage
+But the differences might be correlated?
+
+```{r}
+corr_matrix_PCs_diff <- cor(pcs_diff[-1])
+corrplot(corr_matrix_PCs_diff, type = 'upper', 
+         tl.col = 'black', tl.srt = 45) 
+```
+
+\newpage
+Try to predict similarity with all 6 PCs individually.
+```{r}
+pcs_diff_sim <- acoustic_diffs %>%
+  select(song_id, mean_sim) %>%
+  left_join(., pcs_diff, by = join_by(song_id))
+```
+
+```{r}
+summary(lm(mean_sim ~ abs(PC1_difference), pcs_diff_sim))
+summary(lm(mean_sim ~ abs(PC2_difference), pcs_diff_sim))
+summary(lm(mean_sim ~ abs(PC3_difference), pcs_diff_sim))
+summary(lm(mean_sim ~ abs(PC4_difference), pcs_diff_sim))
+summary(lm(mean_sim ~ abs(PC5_difference), pcs_diff_sim))
+summary(lm(mean_sim ~ abs(PC6_difference), pcs_diff_sim))
+```
+
+\newpage
+And together.
+```{r}
+summary(lm(mean_sim ~ abs(PC1_difference) + abs(PC2_difference) +
+             abs(PC3_difference) + abs(PC4_difference) +
+             abs(PC5_difference) + abs(PC6_difference), pcs_diff_sim))
+```
+
+\newpage
+Visualize just the first PC.
+
+```{r}
+ggplot(pcs_diff_sim, aes(x = abs(PC1_difference), y = mean_sim)) +
+  geom_point()
+```
+
+
+\newpage
+# PCA on scaled feature differences
+Load the PCs of the scaled feature differences.
+```{r}
+diffs_PCs <- read_csv('../../data/processed/expanded/joined_with_features/acoustic_diffs_PCs_noMFCCs.csv')
+```
+
+The PCs themselves should be uncorrelated (which they are).
+
+```{r}
+corr_matrix_PCs <- cor(diffs_PCs[-1])
+corrplot(corr_matrix_PCs, type = 'upper', 
+         tl.col = 'black', tl.srt = 45) 
+```
+
+Load mean similarity ratings.
+```{r}
+sim_ratings <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_scaled_differences.csv')
+sim_ratings %<>% select(c(song_id, mean_sim))
+diffs_PCs %<>%
+  left_join(sim_ratings, ., by=join_by(song_id))
+```
+
+\newpage
+Run models for each PC individually (using `broom`).
+```{r}
+# code adapted from this post: https://stackoverflow.com/questions/54907726/running-multiple-linear-regressions-across-several-columns-of-a-data-frame-in-r
+individual_models <- diffs_PCs %>%
+  select(-song_id) %>%
+  pivot_longer(cols = -mean_sim,
+               names_to = 'column', values_to = 'value') %>%
+  nest(data = -column) %>% # this gives us one model per PC
+  # each column gets a tibble with mean_sim and value as columns
+  mutate(model = map(data, ~lm(mean_sim ~ value, data = .))) %>% # run the models
+  mutate(tidy_model = map(model, tidy)) %>% # tidy the models
+  select(-data, -model) %>% # remove untidy models
+  unnest(cols = c(tidy_model))
+print(individual_models)
+```
+
+PCs 1 has a marginally significant p-values in their individual models (between 0.05 and 0.10). However, we're running 7 separate models so that p-value probably would not survive multiple comparisons corrections.
+
+
+Run one model with all 7 PCs.
+```{r}
+# help from here: https://stackoverflow.com/questions/67665340/incorporate-all-columns-of-a-dataframe-into-one-regression
+model20 <- diffs_PCs %>%
+  select(-song_id) %>%
+  lm(mean_sim ~ ., data = .) # first . means all other columns
+summary(model20)
+```
+
+Now the first and third PC are marginally significant. The adjusted R^2 (0.057) is quite a bit lower than R^2 (0.153).
+

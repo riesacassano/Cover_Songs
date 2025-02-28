@@ -1,0 +1,140 @@
+---
+title: "Mediation analysis"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(mediation) # for simple mediation analysis
+library(mma) # for multiple mediation analysis
+select <- dplyr::select
+```
+
+This notebook performs the necessary modeling for the mediation analysis (musical features mediating relationships between emotion and similarity).
+
+We confirmed in the other notebook `emotional_features.Rmd` that both valence and arousal (separately) predict similarity. In this notebook we add more steps to do a mediation analysis:
+
+1. We find which of the musical features are predicted by valence or arousal. As far as interpretations go this is backwards (emotion -> music), but that's ok because the regression is symmetric. If the musical feature is predicted by the emotional feature, then it is a candidate to be a mediator.
+
+2. We then build a model with the emotional feature and the potential mediator(s).
+
+3. We compare the emotion only model to emotion + music model. If the significance of the emotion coefficient disappears completely, then it is a full mediation. If it disappears partially, then it is a partial mediation.
+
+Each of these steps is conducted with valence and arousal separately.
+
+Load the data.
+```{r}
+feature_diffs_scaled <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_scaled_differences.csv')
+```
+
+Keep the musical and emotional features.
+```{r}
+data <- feature_diffs_scaled %>% select(1:2, 23:25, 28:30)
+```
+
+
+\newpage
+# Valence
+
+```{r}
+valence_only <- lm(mean_sim ~ mean_valence_difference, data)
+summary(valence_only)
+```
+
+## Potential mediators
+
+```{r}
+summary(lm(tempo_difference ~ mean_valence_difference, data))
+summary(lm(key_difference ~ mean_valence_difference, data))
+summary(lm(voice_type_difference ~ mean_valence_difference, data))
+summary(lm(mfccs_dist ~ mean_valence_difference, data))
+```
+
+Tempo is the only musical feature with a relationship with valence, so it is the only potential mediator.
+
+```{r}
+mediator <- lm(tempo_difference ~ mean_valence_difference, data)
+summary(mediator)
+```
+
+
+## Mediation
+
+```{r}
+valence_and_musical <- lm(mean_sim ~ mean_valence_difference + tempo_difference, data)
+summary(valence_and_musical)
+```
+
+```{r}
+results <- mediate(mediator, valence_and_musical, 
+                   treat="mean_valence_difference", mediator="tempo_difference",
+                   boot=TRUE, sims=500)
+summary(results)
+```
+
+```{r}
+plot(results)
+```
+
+ACME: Average causal mediation effects
+ADE: Average direct effects
+
+Note that total effect is the same as the coefficient for the valence only model (`mean_sim ~ mean_valence_difference`).
+
+Since ACME is different from zero, there is at least some mediation. However, the ADE is also different from zero, so the mediation is only partial. (If the ADE was zero, then it would be full mediation).
+
+
+\newpage
+# Arousal
+
+```{r}
+arousal_only <- lm(mean_sim ~ mean_arousal_difference, data)
+summary(arousal_only)
+```
+
+## Potential mediators
+
+```{r}
+summary(lm(tempo_difference ~ mean_arousal_difference, data))
+summary(lm(key_difference ~ mean_arousal_difference, data))
+summary(lm(voice_type_difference ~ mean_arousal_difference, data))
+summary(lm(mfccs_dist ~ mean_arousal_difference, data))
+```
+
+Tempo and timbre are the musical features with a relationship with arousal, so these are the potential mediators.
+
+
+## Mediation
+
+```{r}
+arousal_and_musical <- lm(mean_sim ~ mean_arousal_difference + tempo_difference + mfccs_dist, data)
+summary(arousal_and_musical)
+```
+
+
+Because we have two potential mediators, we have to use a different package (`mma`).
+
+```{r}
+meds <- as.data.frame(data %>% select(tempo_difference, mfccs_dist))
+results <- mma(x = meds, 
+               y = data$mean_sim, 
+               pred = data$mean_arousal_difference, 
+               contmed = 1:2, 
+               echo = FALSE)
+```
+
+```{r}
+summary(results)
+```
+
+
+In this case the indirect effect (of tempo and timbre) is different from zero, and the direct effect is not different from zero. Therefore, tempo and timbre fully mediate the relationship between arousal and similarity.

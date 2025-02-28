@@ -1,0 +1,163 @@
+---
+title: "Emotional features to memory"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+This notebook looks at the emotional ratings of memories as a function of the emotional valence and arousal of the songs they are evoked by.
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(lme4)
+library(lmerTest)
+```
+
+Load the data.
+```{r}
+data <- read_csv('../../data/processed/dense/joined_with_features/memory_all.csv')
+```
+
+Make the memory ratings factors.
+```{r}
+common_rating <- c('not at all', 'a little', 'somewhat', 'very', 'extremely')
+data_factor <- data %>%
+  mutate(emot_content = factor(emot_content,
+                               levels = c('very negative','somewhat negative',
+                                          'neutral','somewhat positive',
+                                          'very positive'),
+                               ordered = TRUE),
+         emot_intensity = factor(emot_intensity, 
+                                 levels = common_rating,
+                                 ordered = TRUE),
+         energetic = factor(energetic,
+                            levels = common_rating,
+                            ordered = TRUE)
+         )
+
+```
+
+
+Predict emotional valence of the memories using emotional valence and arousal of the clips.
+
+```{r}
+summary(lmer(as.numeric(emot_content) ~ mean_valence + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(mean_valence, as.numeric(emot_content))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+```{r}
+summary(lmer(as.numeric(emot_content) ~ mean_arousal + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(mean_arousal, as.numeric(emot_content))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+Predict emotional intensity of the memories using emotional valence and arousal of the clips.
+
+```{r}
+summary(lmer(as.numeric(emot_intensity) ~ mean_valence + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(mean_valence, as.numeric(emot_intensity))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+```{r}
+summary(lmer(as.numeric(emot_intensity) ~ mean_arousal + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(mean_arousal, as.numeric(emot_intensity))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+Predict energy of the memories using emotional valence and arousal of the clips.
+
+```{r}
+summary(lmer(as.numeric(energetic) ~ mean_valence + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(mean_valence, as.numeric(energetic))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+```{r}
+summary(lmer(as.numeric(energetic) ~ mean_arousal + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(mean_arousal, as.numeric(energetic))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+\newpage
+
+Valence and arousal together
+
+```{r}
+summary(lmer(as.numeric(emot_content) ~ mean_valence*mean_arousal + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+summary(lmer(as.numeric(emot_intensity) ~ mean_valence*mean_arousal + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+summary(lmer(as.numeric(energetic) ~ mean_valence*mean_arousal + (1|internal_id) + (1|song_id), data_factor))
+```
+
+
+
+\newpage
+Tempo?
+
+```{r}
+summary(lmer(as.numeric(emot_content) ~ tempo + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(tempo, as.numeric(emot_content))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+```{r}
+summary(lmer(as.numeric(emot_intensity) ~ tempo + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(tempo, as.numeric(emot_intensity))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```
+
+```{r}
+summary(lmer(as.numeric(energetic) ~ tempo + (1|internal_id) + (1|song_id), data_factor))
+```
+
+```{r}
+ggplot(data_factor, aes(tempo, as.numeric(energetic))) +
+  geom_jitter(width = 0) +
+  geom_smooth(method = 'lm')
+```

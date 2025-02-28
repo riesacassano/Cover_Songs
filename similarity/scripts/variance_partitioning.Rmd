@@ -1,0 +1,395 @@
+---
+title: "Variance partitioning"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(vegan) # to perform variance partitioning
+library(eulerr) # to make area-proportional Venn diagrams
+select <- dplyr::select
+```
+
+This notebook uses the musical and emotional features and performs variance partitioning to understand how these sets of features work together to explain similarity.
+
+Load the data.
+```{r}
+feature_diffs_scaled <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_scaled_differences.csv')
+```
+
+Keep the musical and emotional features.
+```{r}
+data <- feature_diffs_scaled %>% select(1:2, 23:25, 28:30)
+```
+
+With help from: https://www.davidzeleny.net/anadat-r/doku.php/en:varpart
+
+Venn diagram parts:
+
+- a: variance explained by musical features only
+- b: variance explained by musical and emotional features together
+- c: variance explained by emotional features only
+- d: unexplained variance
+
+For the musical features, we'll allow key, voice type, and MFCCs to interact because that was the best musical features model (see `musical_features.Rmd`).
+
+\newpage
+# Calculate manually
+
+[a+b+c]
+```{r}
+rda.all <- rda(data$mean_sim ~ tempo_difference + key_difference*voice_type_difference*mfccs_dist +
+                 mean_valence_difference + mean_arousal_difference,
+               data)
+summary(rda.all)
+```
+
+Is this consistent with just a simple linear model?
+```{r, include = FALSE}
+summary(lm(mean_sim ~ tempo_difference + key_difference*voice_type_difference*mfccs_dist +
+             mean_valence_difference + mean_arousal_difference,
+           data))
+```
+
+Yes, the explained variance is 0.5821, which is similar to the "constrained" variance in the RDA model. For RDA, it seems like "unconstrained" variance is [d].
+
+
+Model for musical features only [a+b]
+```{r}
+rda.mus <- rda(data$mean_sim ~ tempo_difference + key_difference*voice_type_difference*mfccs_dist,
+               data)
+summary(rda.mus)
+```
+
+Model for emotional features only [b+c]
+```{r}
+rda.emot <- rda(data$mean_sim ~ mean_valence_difference + mean_arousal_difference,
+               data)
+summary(rda.emot)
+```
+
+Extract the R^2 values.
+
+```{r}
+abc <- RsquareAdj(rda.all)$adj.r.squared
+ab <- RsquareAdj(rda.mus)$adj.r.squared
+bc <- RsquareAdj(rda.emot)$adj.r.squared
+```
+
+Subtract to find individual fractions.
+
+```{r}
+# shared variance
+b <- ab + bc - abc
+# variance explained by musical features only
+a <- ab - b
+# variance explained by emotional features only
+c <- bc - b
+```
+
+- variance explained by musical features only (a): 20.58% 
+- shared variance explained (b): 29.74%
+- variance explained by emotional features only (c): 7.89%
+- unexplained variance (d): 41.79%
+
+
+\newpage
+# Musical features
+
+- a: variance explained by tempo only
+- b: shared variance explained by the musical features
+- c: variance explained by key, voice type, and MFCCs only
+- d: unexplained variance
+
+[a+b+c]
+```{r}
+rda.mus <- rda(data$mean_sim ~ tempo_difference + key_difference*voice_type_difference*mfccs_dist,
+               data)
+summary(rda.mus)
+```
+
+[a+b]
+```{r}
+rda.tempo <- rda(data$mean_sim ~ tempo_difference,
+               data)
+summary(rda.tempo)
+```
+
+[b+c]
+```{r}
+rda.other <- rda(data$mean_sim ~ key_difference*voice_type_difference*mfccs_dist,
+               data)
+summary(rda.other)
+```
+
+Extract the R^2 values.
+
+```{r}
+abc_m <- RsquareAdj(rda.mus)$adj.r.squared
+ab_m <- RsquareAdj(rda.tempo)$adj.r.squared
+bc_m <- RsquareAdj(rda.other)$adj.r.squared
+```
+
+Subtract to find individual fractions.
+
+```{r}
+# shared variance
+b_m <- ab_m + bc_m - abc_m
+# variance explained by tempo only
+a_m <- ab_m - b_m
+# variance explained by key, voice type, and timbre only
+c_m <- bc_m - b_m
+```
+
+
+- variance explained by tempo only (a): 26.28% 
+- shared variance (b): 6.61%
+- variance explained by key, voice type, and timbre only (c): 17.42%
+- unexplained variance (d): 49.69%
+
+\newpage
+# Emotional features
+
+- a: variance explained by valence only
+- b: shared variance explained by the emotional features
+- c: variance explained by arousal only
+- d: unexplained variance
+
+[a+b+c]
+```{r}
+rda.emot <- rda(data$mean_sim ~ mean_valence_difference + mean_arousal_difference,
+               data)
+summary(rda.emot)
+```
+
+[a+b]
+```{r}
+rda.val <- rda(data$mean_sim ~ mean_valence_difference,
+               data)
+summary(rda.val)
+```
+
+[b+c]
+```{r}
+rda.arous <- rda(data$mean_sim ~ mean_arousal_difference,
+               data)
+summary(rda.arous)
+```
+
+Extract the R^2 values.
+
+```{r}
+abc_e <- RsquareAdj(rda.emot)$adj.r.squared
+ab_e <- RsquareAdj(rda.val)$adj.r.squared
+bc_e <- RsquareAdj(rda.arous)$adj.r.squared
+```
+
+Subtract to find individual fractions.
+
+```{r}
+# shared variance
+b_e <- ab_e + bc_e - abc_e
+# variance explained by valence only
+a_e <- ab_e - b_e
+# variance explained by arousal only
+c_e <- bc_e - b_e
+```
+
+
+- variance explained by valence only (a): 18.51%
+- shared variance by the emotional features (b): 10.92%
+- variance explained by arousal only (c): 8.20%
+- unexplained variance (d): 62.37%
+
+\newpage
+# Using `varpart`
+
+Musical and emotional features as a set
+```{r}
+varp_2sets <- varpart(data$mean_sim, 
+                      ~ tempo_difference + key_difference*voice_type_difference*mfccs_dist,
+                      ~ mean_valence_difference + mean_arousal_difference, 
+                      data=data)
+varp_2sets
+```
+
+Plot the results with a Venn diagram
+
+```{r}
+plot(varp_2sets, digits = 2, Xnames = c('musical\nfeatures', 'emotional\nfeatures'))
+```
+
+Plot an area-proportional Venn diagram
+
+```{r}
+these_fractions <- varp_2sets$part$indfract$Adj.R.squared
+combo <- c(A=these_fractions[1], B=these_fractions[2], "A&B"=these_fractions[3])
+percents <- round(combo * 100, digits = 2)
+percents <- paste(percents, "%", sep = '')
+
+this_fit <- euler(combo, shape = "ellipse")
+plot(this_fit, fills = c('#1F78B4','#F14D0E'), quantities = percents,
+     labels = c('musical features', 'emotional features'))
+```
+
+
+Separating into three sets (tempo, all other musical features, emotional features)
+
+```{r}
+varp_3sets <- varpart(data$mean_sim, 
+                      ~ tempo_difference,
+                      ~ key_difference*voice_type_difference*mfccs_dist,
+                      ~ mean_valence_difference + mean_arousal_difference, 
+                      data=data)
+varp_3sets
+```
+
+```{r}
+plot(varp_3sets, digits = 2, Xnames = c('tempo', 'other musical\nfeatures', 'emotional\nfeatures'))
+```
+
+```{r}
+these_fractions <- varp_3sets$part$indfract$Adj.R.square
+these_fractions <- ifelse(these_fractions < 0, 0, these_fractions)
+
+combo <- c(A=these_fractions[1], B=these_fractions[2], C=these_fractions[3],
+           "A&B"=these_fractions[4], 
+           "A&C"=these_fractions[6], # order matters apparently
+           "B&C"=these_fractions[5], 
+           "A&B&C"=these_fractions[7])
+percents <- round(combo * 100, digits = 2)
+percents <- paste(percents, "%", sep = '')
+
+this_fit <- euler(combo, shape = "ellipse")
+p3 <- plot(this_fit, fills = c('#825AA9', '#298C70','#F14D0E'), 
+          alpha = 0.8, quantities = percents,
+          labels = c('tempo', 'key,\nvoice type,\ntimbre', 'valence & arousal'))
+p3
+#ggsave('../figures/venn_three-way.png', p3)
+```
+
+\newpage
+
+Venn diagrams for musical features only and emotional features only.
+
+Musical features only
+```{r}
+varp_mus <- varpart(data$mean_sim, 
+                    ~ tempo_difference,
+                    ~ key_difference*voice_type_difference*mfccs_dist,
+                    data=data)
+varp_mus
+```
+
+Plot the results with a Venn diagram
+
+```{r}
+plot(varp_mus, digits = 2, Xnames = c('tempo', 'key, voice type, timbre'))
+```
+
+Plot an area-proportional Venn diagram
+
+```{r}
+these_fractions <- varp_mus$part$indfract$Adj.R.squared
+combo <- c(A=these_fractions[1], B=these_fractions[2], "A&B"=these_fractions[3])
+percents <- round(combo * 100, digits = 2)
+percents <- paste(percents, "%", sep = '')
+
+this_fit <- euler(combo, shape = "ellipse")
+p.mus <- plot(this_fit, fills = c('#825AA9','#298C70'), 
+              quantities = percents, alpha = 0.8,
+              labels = c('tempo', 'key, voice type, timbre'))
+p.mus
+#ggsave('../figures/venn_musical.png', p.mus)
+```
+
+
+Emotional features only
+```{r}
+varp_emot <- varpart(data$mean_sim, 
+                    ~ mean_valence_difference,
+                    ~ mean_arousal_difference,
+                    data=data)
+varp_emot
+```
+
+Plot the results with a Venn diagram
+
+```{r}
+plot(varp_emot, digits = 2, Xnames = c('valence', 'arousal'))
+```
+
+Plot an area-proportional Venn diagram
+
+```{r}
+these_fractions <- varp_emot$part$indfract$Adj.R.squared
+combo <- c(A=these_fractions[1], B=these_fractions[2], "A&B"=these_fractions[3])
+percents <- round(combo * 100, digits = 2)
+percents <- paste(percents, "%", sep = '')
+
+this_fit <- euler(combo, shape = "ellipse")
+p.emot <- plot(this_fit, fills = c('#FF7F00','#E31A1C'), 
+              quantities = percents, alpha = 0.8,
+              labels = c('valence', 'arousal'))
+p.emot
+#ggsave('../figures/venn_emotional.png', p.emot)
+```
+
+\newpage
+Can we do this with valence and arousal separately in a four-way model?
+
+```{r}
+varp_4 <- varpart(data$mean_sim, 
+                  ~ tempo_difference,
+                  ~ key_difference*voice_type_difference*mfccs_dist,
+                  ~ mean_valence_difference,
+                  ~ mean_arousal_difference, 
+                  data=data)
+varp_4
+```
+
+Plot the results with a Venn diagram
+
+```{r}
+plot(varp_4, digits = 2, Xnames = c('tempo', 'other musical features',
+                                       'valence', 'arousal'))
+```
+
+Try to plot an area-proportional Venn diagram
+
+```{r}
+these_fractions <- varp_4$part$indfract$Adj.R.square
+these_fractions <- ifelse(these_fractions < 0, 0, these_fractions)
+
+combo <- c(t=these_fractions[1], omf=these_fractions[2], 
+           v=these_fractions[3], a=these_fractions[4],
+           "t&omf"=these_fractions[5], 
+           "t&v"=these_fractions[7],
+           "t&a"=these_fractions[8],
+           "omf&v"=these_fractions[6],
+           "omf&a"=these_fractions[9], 
+           "v&a"=these_fractions[10],
+           "t&omf&a"=these_fractions[11], 
+           "t&omf&v"=these_fractions[12],
+           "t&v&a"=these_fractions[14],
+           "omf&v&a"=these_fractions[13], 
+           "t&omf&v&a"=these_fractions[15])
+percents <- round(combo * 100, digits = 2)
+percents <- paste(percents, "%", sep = '')
+
+this_fit <- euler(combo, shape = "ellipse")
+p4 <- plot(this_fit, fills = c('#825AA9','#298C70','#FF7F00','#E31A1C'), 
+              quantities = percents, alpha = 0.8,
+              labels = c('tempo', 'key,\nvoice type,\ntimbre', 'valence', 'arousal'))
+p4
+#ggsave('../figures/venn_four-way.png', p4)
+```

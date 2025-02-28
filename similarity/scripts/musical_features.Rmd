@@ -1,0 +1,470 @@
+---
+title: 'Musical features analysis'
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(corrplot)
+```
+
+This script explores the musical features in the expanded corpus, specifically:
+
+- correlations between feature differences
+- correlations between individual feature differences and similarity between originals and covers
+
+We include MFCCs distance as an overall measure of timbre.
+
+
+First, load the features and feature differences (unscaled).
+```{r}
+features <- read_csv('../../data/processed/expanded/joined_with_features/all_features.csv')
+feature_diffs <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_differences.csv')
+```
+
+Load the scaled feature differences for later.
+```{r}
+feature_diffs_scaled <- read_csv('../../data/processed/expanded/joined_with_features/similarity_and_feature_scaled_differences.csv')
+```
+
+
+Select only columns with musical features.
+```{r}
+musical_feat <- features %>% select(1, 22:26)
+musical_diffs <- feature_diffs %>% select(1:3, 24:29)
+musical_diffs_scaled <- feature_diffs_scaled %>% select(1:2, 23:28)
+```
+
+
+For genre - we don't have a great way of measuring genre distance, but we do have some examples where the original and cover are in the same genre. Create "same genre" predictor.
+```{r}
+genre <- features %>%
+  select(song_id, genre) %>%
+  separate_wider_delim(cols = song_id, delim = '_', 
+                       names = c('title', 'artist', 'orig_or_cover')) %>%
+  mutate(song_id = paste(title, artist, sep = '_')) %>%
+  mutate(title = NULL, artist = NULL) %>%
+  pivot_wider(id_cols = song_id, names_from = orig_or_cover, values_from = genre) %>%
+  mutate(same_genre = ifelse(Cover5S == Original5S, 1, 0))
+```
+
+How many examples are there where original-cover pairs are in the same genre?
+```{r}
+genre %>%
+  filter(same_genre == 1)
+```
+16 (out of 70) 
+
+Join same genre with other musical feature differences.
+```{r}
+musical_diffs <- genre %>%
+  select(song_id, same_genre) %>%
+  left_join(musical_diffs, ., by = join_by(song_id))
+
+musical_diffs_scaled <- genre %>%
+  select(song_id, same_genre) %>%
+  left_join(musical_diffs_scaled, ., by = join_by(song_id))
+```
+
+\newpage
+# Are there correlations between the feature differences?
+
+Remove treble and TBB difference - summarized in VT difference
+```{r}
+musical_diffs %<>%
+  select(-c(treble_difference, tbb_difference))
+```
+
+```{r}
+corr_matrix <- cor(musical_diffs[-seq(1:3)]) # leave out song_id, similarity
+```
+
+```{r}
+corrplot(corr_matrix, type = 'upper', # upper triangle
+         method = 'number',
+         order = 'hclust', # automatically orders with hierarchical clustering
+         tl.col = 'black', tl.srt = 45) # specify text color and rotation
+```
+
+```{r}
+summary(lm(tempo_difference ~ same_genre, musical_diffs_scaled))
+summary(lm(key_difference ~ same_genre, musical_diffs_scaled))
+summary(lm(voice_type_difference ~ same_genre, musical_diffs_scaled))
+summary(lm(mfccs_dist ~ same_genre, musical_diffs_scaled))
+```
+
+```{r}
+ggplot(musical_diffs_scaled, aes(x = same_genre, y = mfccs_dist)) +
+  geom_jitter(width = .1) +
+  geom_smooth(method = 'lm')
+```
+
+
+\newpage
+# Do the individual features predict similarity?
+We don't need to take the absolute value of the differences - we did that in `4_data_joining.R` before each feature difference was scaled.
+
+```{r}
+summary(lm(mean_sim ~ tempo_difference, musical_diffs_scaled))
+summary(lm(mean_sim ~ key_difference, musical_diffs_scaled))
+summary(lm(mean_sim ~ voice_type_difference, musical_diffs_scaled))
+summary(lm(mean_sim ~ mfccs_dist, musical_diffs_scaled))
+summary(lm(mean_sim ~ same_genre, musical_diffs_scaled))
+```
+
+
+# How do the individual features interact with genre?
+
+```{r}
+summary(lm(mean_sim ~ tempo_difference*same_genre, musical_diffs_scaled))
+summary(lm(mean_sim ~ key_difference*same_genre, musical_diffs_scaled))
+summary(lm(mean_sim ~ voice_type_difference*same_genre, musical_diffs_scaled))
+summary(lm(mean_sim ~ mfccs_dist*same_genre, musical_diffs_scaled))
+```
+
+\newpage
+Visualize timbre and genre
+
+```{r}
+ggplot(musical_diffs, aes(x = mfccs_dist, y = mean_sim, fill = factor(same_genre))) +
+  geom_point(size = 3, alpha = 0.8, pch = 21) +
+  # different genre
+  geom_smooth(data = musical_diffs %>% filter(same_genre == 0),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              color = 'black') +
+  # same genre
+  geom_smooth(data = musical_diffs %>% filter(same_genre == 1),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              color = 'black', fill = 'black') +
+  theme_light() +
+  xlab('MFCC distance') +
+  ylab('mean similarity rating') +
+  theme(axis.title.x = element_text(color = '#33A02C', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) +
+  scale_y_continuous(limits = c(1.9, 7), breaks = seq(2,7)) +
+  # make genre black and white
+  scale_fill_manual(breaks = c(0,1), values = c('black', 'white'),
+                    name = "", labels = c('different genre', 'same genre'))
+#ggsave('../figures/timbre_genre.png', width = 6, height = 5)
+```
+
+Visualize tempo and genre
+
+```{r}
+ggplot(musical_diffs, aes(x = abs(tempo_difference), y = mean_sim, fill = factor(same_genre))) +
+  geom_point(size = 3, alpha = 0.8, pch = 21) +
+  # different genre
+  geom_smooth(data = musical_diffs %>% filter(same_genre == 0),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              color = 'black') +
+  # same genre
+  geom_smooth(data = musical_diffs %>% filter(same_genre == 1),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              color = 'black', fill = 'black') +
+  theme_light() +
+  xlab('tempo difference') +
+  ylab('mean similarity rating') +
+  theme(axis.title.x = element_text(color = '#825AA9', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) +
+  scale_y_continuous(limits = c(1.9, 7), breaks = seq(2,7)) +
+  # make genre black and white
+  scale_fill_manual(breaks = c(0,1), values = c('black', 'white'),
+                    name = "", labels = c('different genre', 'same genre'))
+#ggsave('../figures/tempo_genre.png', width = 6, height = 5)
+```
+
+
+\newpage
+
+# Visualize features individually.
+
+Color palette adapted from paired palette in RColorBrewer. Blended two colors using https://meyerweb.com/eric/tools/color-blend/
+For the main colors: used darker version in paired palette (previously midpoint 3, but that was too light for text)
+For teal, blended blue and green ^
+
+Tempo: purple #825AA9
+Key: blue #1F78B4
+Voice type: teal #298C70
+Timbre: green #33A02C
+
+
+## Tempo
+```{r}
+ggplot(musical_diffs, aes(abs(tempo_difference), mean_sim)) +
+  # for black points, colored line
+  geom_point(size = 3, alpha = 0.8) +
+  geom_smooth(method = 'lm', color = '#825AA9', fill = '#825AA9', alpha = 0.2) +
+  # for colored points, black line
+  #geom_point(color = '#825AA9') +
+  #geom_smooth(method = 'lm', color = 'black', alpha = 0.2, linewidth = 0.7) +
+  theme_light() +
+  scale_x_continuous(breaks = seq(0,60,10)) +
+  scale_y_continuous(breaks = seq(2,7)) +
+  xlab('tempo difference (in BPM)') +
+  theme(axis.title.x = element_text(color = '#825AA9', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) +
+  ylab('mean similarity rating')
+#ggsave('../figures/tempo_diff_vs_similarity.png', width = 5, height = 5)
+```
+
+## Key
+```{r}
+ggplot(musical_diffs, aes(abs(key_difference), mean_sim)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_jitter(width = 0.07, size = 3, alpha = 0.8) +
+  geom_smooth(method = 'lm', color = '#1F78B4', fill = '#1F78B4', alpha = 0.2) +
+  theme_light() +
+  scale_x_continuous(breaks = seq(0,6)) +
+  xlab('key difference (in semitones)') +
+  theme(axis.title.x = element_text(color = '#1F78B4', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) +
+  ylab('mean similarity rating')
+#ggsave('../figures/key_diff_vs_similarity.png', width = 5, height = 5)
+```
+
+
+## Voice type
+```{r}
+ggplot(musical_diffs, aes(abs(voice_type_difference), mean_sim)) +
+  geom_smooth(method = 'lm', color = '#298C70', fill = '#298C70', 
+              alpha = 0.2, linewidth = 0.7) +
+  geom_jitter(size = 3, alpha = 0.8,
+              width = 0.1, aes(shape = factor(voice_type_difference))) +
+  theme_light() +
+  xlab('voice type difference') +
+  theme(axis.title.x = element_text(color = '#298C70', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 14)) +
+  ylab('mean similarity rating') +
+  scale_y_continuous(limits = c(1.9, 7), breaks = seq(2,7)) +
+  scale_shape_manual(values = c(16, 3, 4),
+                     guide = "none") +
+  scale_x_continuous(breaks = seq(0,2),
+                     labels = c('same voice type', 'add opposite', 'switch')) 
+#ggsave('../figures/voice_type_diff_vs_similarity.png', width = 5, height = 5)
+```
+
+## Timbre
+```{r}
+ggplot(musical_diffs, aes(mfccs_dist, mean_sim)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_smooth(method = 'lm', color = '#33A02C', fill = '#33A02C', alpha = 0.2) +
+  theme_light() +
+  xlab('MFCC distance') +
+  theme(axis.title.x = element_text(color = '#33A02C', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) +
+  ylab('mean similarity rating') +
+  scale_y_continuous(limits = c(1.9, 7), breaks = seq(2,7)) 
+#ggsave('../figures/mfccs_vs_similarity.png', width = 5, height = 5)
+```
+
+## Genre
+```{r}
+ggplot(musical_diffs, aes(same_genre, mean_sim)) +
+  geom_jitter(size = 3, alpha = 0.8, width = 0.07) +
+  geom_smooth(method = 'lm', color = 'black', fill = 'black', alpha = 0.2) +
+  theme_light() +
+  xlab('genre') +
+  scale_x_continuous(breaks = seq(0,1),
+                     labels = c('different genre', 'same genre')) +
+  theme(axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 14)) +
+  ylab('mean similarity rating')
+#ggsave('../figures/genre_vs_similarity.png', width = 5, height = 5)
+```
+
+
+
+\newpage
+# How do the musical features together predict similarity?
+
+Make voice type a factor, and include "add opposite" in "switch"
+```{r}
+musical_diffs_scaled %<>%
+  mutate(voice_type_factor = factor(ifelse(voice_type_difference < 0,
+                                           'same', 'switch')))
+contrasts(musical_diffs_scaled$voice_type_factor) <- contr.sum(2)
+```
+
+# Full model
+
+```{r}
+full.model <- lm(mean_sim ~ tempo_difference + key_difference + voice_type_factor + mfccs_dist + same_genre, 
+                 musical_diffs_scaled)
+summary(full.model)
+```
+
+\newpage
+# Full model, with interactions
+
+```{r}
+full.model.ints <- lm(mean_sim ~ tempo_difference*key_difference*voice_type_factor*mfccs_dist*same_genre, 
+                      musical_diffs_scaled)
+summary(full.model.ints)
+```
+
+\newpage
+Is the benefit of better R^2 worth all of these degrees of freedom? Use ANOVA to test the nested models.
+
+```{r}
+anova(full.model, full.model.ints)
+```
+
+All of these interactions are worth it (p = 0.010).
+
+\newpage
+Without genre, there were marginally significant interactions are among key, voice type, and timbre. 
+
+What if we separate tempo and just let the other features interact?
+
+```{r}
+full.model.someints <- lm(mean_sim ~ tempo_difference + key_difference*voice_type_factor*mfccs_dist*same_genre, 
+                      musical_diffs_scaled)
+summary(full.model.someints) 
+```
+
+Are these interactions worth it?
+
+```{r}
+anova(full.model, full.model.someints)
+```
+
+Yes, adding these interactions adds sufficient explanatory benefit to merit including them.
+
+\newpage
+# How do the musical features together predict similarity WITHOUT genre?
+
+# Full model
+
+```{r}
+full.model <- lm(mean_sim ~ tempo_difference + key_difference + voice_type_factor + mfccs_dist, 
+                 musical_diffs_scaled)
+summary(full.model)
+```
+
+\newpage
+# Full model, with interactions
+
+```{r}
+full.model.ints <- lm(mean_sim ~ tempo_difference*key_difference*voice_type_factor*mfccs_dist, 
+                      musical_diffs_scaled)
+summary(full.model.ints)
+```
+
+\newpage
+Is the benefit of better R^2 worth all of these degrees of freedom? Use ANOVA to test the nested models.
+
+```{r}
+anova(full.model, full.model.ints)
+```
+
+All of these interactions are not worth it (p = 0.10).
+
+\newpage
+Without genre, there are marginally significant interactions are among key, voice type, and timbre. 
+
+What if we separate tempo and just let the other features interact?
+
+```{r}
+full.model.someints <- lm(mean_sim ~ tempo_difference + key_difference*voice_type_factor*mfccs_dist, 
+                      musical_diffs_scaled)
+summary(full.model.someints) 
+```
+
+Are these interactions worth it?
+
+```{r}
+anova(full.model, full.model.someints)
+```
+
+Yes, adding these interactions adds sufficient explanatory benefit to merit including them.
+
+
+\newpage
+# Visualize interactions
+
+Key and voice type
+
+```{r}
+ggplot(musical_diffs, aes(x = abs(key_difference), y = mean_sim, shape = factor(voice_type_difference))) + 
+  geom_jitter(width = 0.1, size = 3, alpha = 0.8) +
+  # same - color code with key blue
+  geom_smooth(data = musical_diffs %>% filter(voice_type_difference == 0),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              #color = 'black') +
+              color = '#1F78B4', fill = '#1F78B4') +
+  # switch - color code with voice type teal
+  geom_smooth(data = musical_diffs %>% filter(voice_type_difference == 2),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              #color = 'black') +
+              color = '#298C70', fill = '#298C70') + 
+  theme_light() +
+  scale_x_continuous(breaks = seq(0,6)) +
+  scale_shape_manual(values = c(16, 3, 4),
+                     guide = "none") +
+  xlab('key difference (in semitones)') +
+  ylab('mean similarity rating') +
+  theme(axis.title.x = element_text(color = '#1F78B4', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14))
+#ggsave('../figures/key_voice_type_bw.png', width = 5, height = 5)
+#ggsave('../figures/key_voice_type_color.png', width = 5, height = 5)
+```
+
+\newpage
+Timbre and voice type
+
+```{r}
+ggplot(musical_diffs, aes(x = mfccs_dist, y = mean_sim, shape = factor(voice_type_difference))) + 
+  geom_point(size = 3, alpha = 0.8) +
+  # same - color code with timbre green
+  geom_smooth(data = musical_diffs %>% filter(voice_type_difference == 0),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              #color = 'black') +
+              color = '#33A02C', fill = '#33A02C') +
+  # switch - color code with voice type teal
+  geom_smooth(data = musical_diffs %>% filter(voice_type_difference == 2),
+              method = 'lm', alpha = 0.15, linewidth = 0.5,
+              #color = 'black') +
+              color = '#298C70', fill = '#298C70') + 
+  theme_light() +
+  scale_x_continuous(breaks = seq(0,6)) +
+  scale_shape_manual(values = c(16, 3, 4),
+                     guide = "none") +
+  xlab('MFCC distance') +
+  ylab('mean similarity rating') +
+  theme(axis.title.x = element_text(color = '#33A02C', size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) +
+  scale_x_continuous(breaks = c(30,60,90)) + # don't know why I have to hard code them here
+  scale_y_continuous(limits = c(1.9, 7), breaks = seq(2,7)) 
+#ggsave('../figures/timbre_voice_type_bw.png', width = 5, height = 5)
+#ggsave('../figures/timbre_voice_type_color.png', width = 5, height = 5)
+```
+
+
+

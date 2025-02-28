@@ -1,0 +1,205 @@
+---
+title: "Memory likelihood"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+The notebook looks at the likelihood of a cover memory, given that a memory was evoked by the original. We try to predict that given perceptual similarity and musical/emotional features.
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(lme4)
+library(lmerTest)
+```
+
+Load the data.
+```{r}
+data <- read_csv('../../data/processed/dense/joined_with_features/memory_original-w_or_wo_cover_memories.csv')
+```
+
+Load just the features and similarity for song-wise analysis.
+```{r}
+by_song <- read_csv('../../data/processed/dense/joined_with_features/similarity_and_scaled_feature_differences.csv')
+```
+
+
+\newpage
+Does perceptual similarity predict the likelihood of a memory for the cover?
+
+GLMM:
+```{r}
+summary(glmer(memory_cover ~ mean_sim + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+
+
+\newpage
+Compute likelihood per song.
+```{r}
+data_by_song <- data %>%
+  group_by(song_id, memory_cover) %>%
+  summarize(count = n()) %>%
+  pivot_wider(id_cols = song_id, names_from = memory_cover, values_from = count) %>%
+  mutate(likelihood = `TRUE` / (`TRUE` + `FALSE`)) %>%
+  left_join(., by_song, by = join_by(song_id))
+```
+
+```{r}
+summary(lm(likelihood ~ mean_sim, data_by_song))
+```
+
+
+
+
+\newpage
+# Features to memory likelihood
+
+Tempo
+```{r}
+summary(glmer(memory_cover ~ tempo_difference + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+
+Timbre
+```{r}
+summary(glmer(memory_cover ~ mfccs_dist + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+
+Key
+```{r}
+summary(glmer(memory_cover ~ key_difference + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+Voice type
+```{r}
+summary(glmer(memory_cover ~ voice_type_difference + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+
+Valence
+```{r}
+summary(glmer(memory_cover ~ mean_valence_difference + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+
+Arousal
+```{r}
+summary(glmer(memory_cover ~ mean_arousal_difference + (1 | internal_id) + (1 | song_id), 
+              data, family = binomial))
+```
+
+\newpage
+# Features to memory likelihood (by song)
+
+Tempo
+```{r}
+summary(lm(likelihood ~ tempo_difference, data_by_song))
+```
+
+Timbre
+```{r}
+summary(lm(likelihood ~ mfccs_dist, data_by_song))
+```
+
+```{r}
+summary(lm(likelihood ~ key_difference, data_by_song))
+```
+
+```{r}
+summary(lm(likelihood ~ voice_type_difference, data_by_song))
+```
+
+```{r}
+summary(lm(likelihood ~ mean_valence_difference, data_by_song))
+```
+
+```{r}
+summary(lm(likelihood ~ mean_arousal_difference, data_by_song))
+```
+
+
+\newpage
+# Visualizations
+
+## GLMMs
+
+```{r}
+# testing - manipulate to make sure plotting function is working
+data %>%
+  mutate(test_similarity = ifelse(memory_cover, mean_sim + 2, mean_sim)) %>%
+  mutate(memory_cover.int = ifelse(memory_cover == 1, 1, 0)) %>%
+  ggplot(aes(test_similarity, memory_cover.int)) +
+  geom_point() +
+  geom_jitter(width = 0, height = 0.1, alpha = 0.5) +
+  xlab('FAKE similarity (for testing)') +
+  ylab('memory evoked for cover') +
+  stat_smooth(method = 'glm', color = 'black',
+              method.args = list(family = binomial))
+```
+
+
+```{r}
+data %>%
+  mutate(memory_cover.int = ifelse(memory_cover == 1, 1, 0)) %>%
+  ggplot(aes(mean_sim, memory_cover.int)) +
+  geom_jitter(width = 0, height = 0.1, alpha = 0.5) +
+  xlab('mean similarity') +
+  ylab('memory evoked for cover') +
+  stat_smooth(method = 'glm', color = 'black',
+              method.args = list(family = binomial))
+```
+
+Tempo
+```{r}
+data %>%
+  mutate(memory_cover.int = ifelse(memory_cover == 1, 1, 0)) %>%
+  ggplot(aes(tempo_difference, memory_cover.int)) +
+  geom_jitter(width = 0, height = 0.1, alpha = 0.5) +
+  xlab('tempo difference') +
+  ylab('memory evoked for cover') +
+  stat_smooth(method = 'glm', color = 'black',
+              method.args = list(family = binomial))
+```
+
+Voice type
+```{r}
+data %>%
+  mutate(memory_cover.int = ifelse(memory_cover == 1, 1, 0)) %>%
+  ggplot(aes(voice_type_difference, memory_cover.int)) +
+  geom_jitter(width = 0.1, height = 0.1, alpha = 0.5) +
+  xlab('voice type difference') +
+  ylab('memory evoked for cover') +
+  stat_smooth(method = 'glm', color = 'black',
+              method.args = list(family = binomial))
+```
+
+## OLMs
+```{r}
+ggplot(data_by_song, aes(mean_sim, likelihood)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = 'black') +
+  theme_light() +
+  xlab('mean similarity per song') +
+  ylab('likelihood of cover memory')
+#ggsave('../figures/similarity_likelihood.png', width = 7, height = 5)
+```
+
+```{r}
+ggplot(data_by_song, aes(tempo_difference, likelihood)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = 'black') +
+  theme_light() +
+  xlab('tempo difference per song') +
+  ylab('likelihood of cover memory')
+#ggsave('../figures/tempo_likelihood.png', width = 7, height = 5)
+```
+

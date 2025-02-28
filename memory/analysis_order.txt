@@ -1,0 +1,7 @@
+Memory analysis order
+
+'dataset_descriptions.Rmd' (under construction)
+'memory_likelihood.Rmd'
+'memory_content.Rmd'
+'memory_qualities.Rmd'
+'memory_emotion.Rmd'

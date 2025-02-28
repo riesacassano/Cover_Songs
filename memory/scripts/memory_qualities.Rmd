@@ -1,0 +1,122 @@
+---
+title: "Memory qualities"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+This notebook looks at memory qualities (vividness, how spontaneous, etc) for pairs of original-cover memories, as predicted by perceptual similarity of the clips evoking the memories.
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(lme4)
+library(lmerTest)
+```
+
+Load the data.
+```{r}
+data <- read_csv('../../data/processed/dense/joined_with_features/memory_pairs.csv')
+```
+
+Load just the features and similarity for song-wise analysis.
+```{r}
+by_song <- read_csv('../../data/processed/dense/joined_with_features/similarity_and_scaled_feature_differences.csv')
+```
+
+\newpage
+Visualize.
+
+```{r}
+ggplot(data, aes(x = mean_sim, y = control_diff)) +
+  geom_point(alpha = 0.5)
+```
+
+```{r}
+ggplot(data, aes(x = mean_sim, y = vivid_diff)) +
+  geom_point(alpha = 0.5)
+```
+
+```{r}
+ggplot(data, aes(x = mean_sim, y = abs(control_diff))) +
+  geom_point(alpha = 0.5)
+```
+
+```{r}
+ggplot(data, aes(x = mean_sim, y = abs(vivid_diff))) +
+  geom_point(alpha = 0.5)
+```
+
+```{r}
+summary(lmer(control_diff ~ mean_sim + (1 | internal_id) + (1 | song_id),
+             data))
+```
+
+```{r}
+summary(lmer(vivid_diff ~ mean_sim + (1 | internal_id) + (1 | song_id),
+             data))
+```
+
+Compute average vividness and degree of control difference for each song.
+```{r}
+data_by_song_vividness <- data %>%
+  group_by(song_id) %>%
+  summarize(avg_vivid_diff = mean(vivid_diff),
+            count = n()) 
+
+data_by_song_control <- data %>%
+  group_by(song_id) %>%
+  summarize(avg_control_diff = mean(control_diff),
+            count = n())  
+```
+
+
+```{r}
+data_by_song_vividness %<>%
+  left_join(., by_song, by = join_by(song_id))
+
+data_by_song_control %<>%
+  left_join(., by_song, by = join_by(song_id))
+```
+
+\newpage
+```{r}
+summary(lm(avg_vivid_diff ~ mean_sim, data_by_song_vividness))
+```
+
+Visualize.
+```{r}
+ggplot(data_by_song_vividness, aes(x = mean_sim, y = avg_vivid_diff)) +
+  geom_point() +
+  #geom_point(aes(size = count), alpha = 0.75) +
+  geom_smooth(method = "lm", color = 'black') +
+  geom_hline(aes(yintercept = 0)) +
+  theme_light() +
+  xlab('mean similarity per song') +
+  ylab('average difference in memory vividness')
+#ggsave('../figures/similarity_vividness.png', width = 7, height = 5)
+```
+
+\newpage
+```{r}
+summary(lm(avg_control_diff ~ mean_sim, data_by_song_control))
+```
+
+Visualize.
+```{r}
+ggplot(data_by_song_control, aes(x = mean_sim, y = avg_control_diff)) +
+  #geom_point(aes(size = count), alpha = 0.75) +
+  geom_point() +
+  geom_smooth(method = "lm", color = 'black') +
+  geom_hline(aes(yintercept = 0)) +
+  theme_light() +
+  xlab('mean similarity per song') +
+  ylab('average difference in memory degree of control per song\n(how spontaneously it was retrieved)')
+#ggsave('../figures/similarity_control.png', width = 7, height = 5)
+```

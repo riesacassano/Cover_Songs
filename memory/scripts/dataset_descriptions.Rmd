@@ -1,0 +1,38 @@
+---
+title: "Dataset descriptions"
+author: "R. Cassano-Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+This notebook calculates basic descriptors of the memory dataset.
+
+```{r}
+library(tidyverse)
+library(magrittr)
+```
+
+Load the data.
+```{r}
+data <- read_csv('../../data/processed/dense/joined_with_features/memory_original-w_or_wo_cover_memories.csv')
+all_wide <- read_csv('../../data/processed/dense/memory/main_task_wider.csv')
+```
+
+There are 1213 original memories.
+```{r}
+data %>% filter(memory_cover)
+```
+There are 630 cover memories, given that a memory was evoked for the original.
+
+```{r}
+all_wide %>%
+  filter(memory_cover) %>%
+  filter(!memory_orig)
+```
+There are another 245 cover memories where there was not a memory for the corresponding original.
